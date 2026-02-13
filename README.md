@@ -8,7 +8,7 @@ Este proyecto automatiza el tratamiento de fotografías de botellas con las sigu
 
 1. **Eliminación de fondo** — Convierte el fondo en transparente usando IA (modelo U²-Net vía `rembg`), dejando únicamente la botella.
 2. **Limpieza de bordes** — Elimina sombras, halos y semitransparencias residuales del proceso de matting.
-3. **Rotación 90°** — Gira la imagen en sentido horario para que la embocadura quede a la derecha.
+3. **Rotación 90° automática** — Detecta si la botella recortada es vertical (portrait) y la rota para que la embocadura quede a la derecha. Las imágenes que ya son horizontales se dejan como están.
 4. **Exportación WebP** — Guarda en formato `.webp` con compresión optimizada, garantizando que el archivo resultante no pese más que el original.
 5. **Detección de duplicados** — Comprueba por nombre si la imagen ya fue procesada, evitando reprocesar.
 
@@ -94,7 +94,8 @@ Los parámetros se definen como constantes al inicio de `process_bottles.py`:
 
 | Parámetro           | Valor por defecto | Descripción                                                      |
 |---------------------|-------------------|------------------------------------------------------------------|
-| `ALPHA_THRESHOLD`   | `10`              | Umbral para eliminar semitransparencias débiles (halo/sombra)    |
+| `ALPHA_THRESHOLD`   | `10`              | Umbral bajo para eliminar halos débiles antes de erosión         |
+| `ALPHA_CUTOFF`      | `128`             | Umbral de binarización: >`CUTOFF`→255, ≤`CUTOFF`→0 (elimina semi-transparencias) |
 | `ERODE_PX`          | `1`               | Píxeles de erosión del borde alfa (elimina reborde residual)     |
 | `ROTATE_CLOCKWISE`  | `True`            | Dirección de rotación (`True` = horario, embocadura a la derecha)|
 | `WEBP_METHOD`       | `6`               | Método de compresión WebP (6 = máxima compresión, más lento)     |
@@ -116,18 +117,20 @@ Imagen original (input/)
     │
     ▼
 [3] Limpieza de canal alfa
-    ├── Umbralización (elimina semitransparencias < ALPHA_THRESHOLD)
-    └── Erosión 3×3 (elimina reborde de 1px)
+    ├── Umbralización (elimina halos débiles < ALPHA_THRESHOLD)
+    ├── Erosión 3×3 (elimina reborde de 1px)
+    └── Binarización (>ALPHA_CUTOFF → 255, resto → 0)
     │
     ▼
-[4] Rotación 90° en sentido horario
+[4] Recorte al contorno de la botella
     │
     ▼
-[5] Recorte al contorno + guardado ──→ output/ (.webp)
+[5] Rotación 90° automática (solo si la botella recortada es portrait)
     │
     ▼
-Optimización WebP: reduce calidad iterativamente hasta que
-el archivo no supere el tamaño del original
+[6] Guardado WebP optimizado ──→ output/
+    Reduce calidad iterativamente hasta que
+    el archivo no supere el tamaño del original
 ```
 
 ## Formatos de Imagen Soportados
@@ -145,7 +148,7 @@ el archivo no supere el tamaño del original
 
 ## Tests
 
-El proyecto incluye 17 tests unitarios con pytest:
+El proyecto incluye 22 tests unitarios con pytest:
 
 ```bash
 # Instalar pytest (si no está instalado)
@@ -155,7 +158,7 @@ pip install pytest
 python -m pytest tests/ -v
 ```
 
-Los tests cubren: `rotate_90`, `clean_alpha`, `crop_to_alpha`, `save_webp_optimized`, `list_images` y `process_image` (skip de duplicados).
+Los tests cubren: `needs_rotation`, `rotate_90`, `clean_alpha` (incluyendo binarización), `crop_to_alpha`, `save_webp_optimized`, `list_images` y `process_image` (skip de duplicados).
 
 ## Licencia
 

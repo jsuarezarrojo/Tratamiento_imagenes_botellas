@@ -35,6 +35,12 @@ requirements.txt    → Dependencias (versiones fijadas)
 ### 1. Una sola carpeta de salida
 Se genera una única variante por imagen: recortada al bounding box del canal alfa (mínimo tamaño, ideal para web). Esto alinea la implementación con la especificación original que indicaba una sola carpeta `output/`.
 
+### 1b. Binarización del canal alfa
+Después de la erosión, el canal alfa se binariza (>128 → 255, ≤128 → 0). Esto elimina las semi-transparencias que causan "fondo sucio" al comprimir en WebP lossy, ya que la compresión degrada el alfa de 255 a ~250.
+
+### 1c. Detección automática de orientación
+La rotación se decide **después del recorte** (crop), no antes. Esto permite detectar correctamente la forma real de la botella incluso en imágenes cuadradas. Solo se rotan las imágenes portrait (h > w); las landscape se dejan como están.
+
 ### 2. Erosión sin OpenCV
 Se implementó erosión 3×3 con NumPy puro (`np.minimum.reduce`) para evitar la dependencia pesada de OpenCV. Suficiente para eliminar el reborde de 1px que deja el matting.
 
@@ -56,7 +62,7 @@ Se aplica `exif_transpose()` al inicio para que la orientación sea correcta ind
 ## Testing
 
 - Framework: **pytest**
-- 17 tests unitarios cubriendo todas las funciones puras.
+- 22 tests unitarios cubriendo todas las funciones puras.
 - `rembg` se mockea en tests para evitar dependencia de `onnxruntime` en CI.
 
 ## Limitaciones Conocidas

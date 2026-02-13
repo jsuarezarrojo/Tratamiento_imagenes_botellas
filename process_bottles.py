@@ -10,8 +10,9 @@ INPUT_DIR = Path("input")
 OUT_DIR = Path("output")
 
 # Fondo/recorte
-ALPHA_THRESHOLD = 10   # sube si queda "halo/sombra"
-ERODE_PX = 1           # 1 suele ir bien para quitar reborde
+ALPHA_THRESHOLD = 10    # umbral bajo para eliminar halos débiles antes de erosión
+ALPHA_CUTOFF = 128      # umbral de binarización: >CUTOFF → 255 (opaco), ≤CUTOFF → 0 (transparente)
+ERODE_PX = 1            # 1 suele ir bien para quitar reborde
 
 # Rotación: botella "de pie" => boca a la derecha con clockwise
 ROTATE_CLOCKWISE = True
@@ -37,19 +38,25 @@ def list_images(folder: Path):
             yield p
 
 
+def needs_rotation(img: Image.Image) -> bool:
+    """Detecta si la imagen necesita rotación (es portrait / vertical)."""
+    w, h = img.size
+    return h > w
+
+
 def rotate_90(img: Image.Image) -> Image.Image:
     return img.transpose(Image.Transpose.ROTATE_270 if ROTATE_CLOCKWISE else Image.Transpose.ROTATE_90)
 
 
 def clean_alpha(img_rgba: Image.Image) -> Image.Image:
-    """Quita sombras/halos típicos del matting ajustando alpha + erosión ligera."""
+    """Quita sombras/halos del matting: erosión + binarización del canal alfa."""
     if img_rgba.mode != "RGBA":
         img_rgba = img_rgba.convert("RGBA")
 
     arr = np.array(img_rgba).astype(np.uint8)
     alpha = arr[:, :, 3].astype(np.uint8)
 
-    # umbral para eliminar semitransparencias débiles (halo)
+    # Reason: Primero eliminamos halos muy débiles antes de erosionar
     alpha = np.where(alpha < ALPHA_THRESHOLD, 0, alpha).astype(np.uint8)
 
     # erosión 3x3 simple (sin OpenCV)
@@ -64,6 +71,10 @@ def clean_alpha(img_rgba: Image.Image) -> Image.Image:
             ]
             a = np.minimum.reduce(neigh).astype(np.uint8)
         alpha = a
+
+    # Reason: Binarizar alfa elimina semi-transparencias que causan fondo sucio
+    # en WebP lossy (la compresión degrada el canal alfa de 255 a ~250)
+    alpha = np.where(alpha > ALPHA_CUTOFF, 255, 0).astype(np.uint8)
 
     arr[:, :, 3] = alpha
     return Image.fromarray(arr, mode="RGBA")
@@ -128,11 +139,16 @@ def process_image(in_path: Path):
     # 3) Limpieza de bordes (sombras/halo)
     img_rgba = clean_alpha(img_rgba)
 
-    # 4) Rotación
-    img_rgba = rotate_90(img_rgba)
-
-    # 5) Recorte al contorno y guardado
+    # 4) Recorte al contorno (revela la forma real de la botella)
     cropped = crop_to_alpha(img_rgba)
+
+    # 5) Rotación (solo si la botella recortada es portrait/vertical)
+    if needs_rotation(cropped):
+        cropped = rotate_90(cropped)
+    else:
+        print(f"  (sin rotar, ya es landscape): {in_path.name}")
+
+    # 6) Guardado WebP optimizado
     max_bytes = in_bytes if CAP_TO_INPUT_SIZE else None
     save_webp_optimized(cropped, out_path, max_bytes)
     print(f"OK: {in_path.name} -> {out_path.name}")

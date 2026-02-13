@@ -41,6 +41,27 @@ def make_rgba_with_halo(width: int, height: int) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
+# needs_rotation
+# ---------------------------------------------------------------------------
+
+class TestNeedsRotation:
+    def test_portrait_needs_rotation(self):
+        """A portrait image (height > width) should need rotation."""
+        img = make_rgba(100, 200)
+        assert pb.needs_rotation(img) is True
+
+    def test_landscape_no_rotation(self):
+        """A landscape image (width > height) should NOT need rotation."""
+        img = make_rgba(200, 100)
+        assert pb.needs_rotation(img) is False
+
+    def test_square_no_rotation(self):
+        """A square image (width == height) should NOT need rotation."""
+        img = make_rgba(100, 100)
+        assert pb.needs_rotation(img) is False
+
+
+# ---------------------------------------------------------------------------
 # rotate_90
 # ---------------------------------------------------------------------------
 
@@ -85,6 +106,25 @@ class TestCleanAlpha:
         result_alpha = np.array(cleaned)[:, :, 3]
         # Reason: Interior pixels (away from border) should stay 255
         assert result_alpha[10, 10] == 255
+
+    def test_binarizes_alpha(self):
+        """Semi-transparent pixels should be binarized: >CUTOFF→255, ≤CUTOFF→0."""
+        # Reason: Create image with alpha=200 (above default CUTOFF=128)
+        arr = np.full((10, 10, 4), [100, 100, 100, 200], dtype=np.uint8)
+        img = Image.fromarray(arr, mode="RGBA")
+        cleaned = pb.clean_alpha(img)
+        result_alpha = np.array(cleaned)[:, :, 3]
+        # Reason: All pixels had alpha=200 > 128, so after binarization they should be 255
+        assert np.all((result_alpha == 0) | (result_alpha == 255))
+
+    def test_binarizes_below_cutoff_to_zero(self):
+        """Pixels with alpha at or below CUTOFF should become 0 after binarization."""
+        # Reason: alpha=100 is below default CUTOFF=128 but above THRESHOLD=10
+        arr = np.full((10, 10, 4), [100, 100, 100, 100], dtype=np.uint8)
+        img = Image.fromarray(arr, mode="RGBA")
+        cleaned = pb.clean_alpha(img)
+        result_alpha = np.array(cleaned)[:, :, 3]
+        assert np.all(result_alpha == 0)
 
     def test_converts_non_rgba(self):
         """If input is RGB, it should be converted to RGBA before processing."""
